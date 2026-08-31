@@ -1,4 +1,4 @@
-import makeWASocket, { Browsers, useMultiFileAuthState, delay } from '@whiskeysockets/baileys'
+import makeWASocket, { Browsers, useMultiFileAuthState, delay, fetchLatestBaileysVersion } from '@whiskeysockets/baileys'
 import express from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -85,19 +85,34 @@ app.get('/code', async (req, res) => {
 
   const sessionPath = path.join(process.cwd(), `temp_${Date.now()}`)
   try {
+    const { version } = await fetchLatestBaileysVersion()
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
+    
     const sock = makeWASocket({
+      version,
       auth: state,
-      browser: Browsers.ubuntu('Chrome'),
-      logger: P({ level: 'fatal' })
+      printQRInTerminal: false,
+      logger: P({ level: 'fatal' }),
+      browser: ['Ubuntu', 'Chrome', '20.0.04'],
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 0,
+      keepAliveIntervalMs: 10000,
+      emitOwnEvents: true,
+      retryRequestOptions: {
+        delayMs: 250,
+        maxRetries: 5
+      }
     })
 
     sock.ev.on('creds.update', saveCreds)
+
     await delay(3000)
 
-    const rawCode = await sock.requestPairingCode(number)
-    const formattedCode = rawCode?.match(/.{1,4}/g)?.join('-') || rawCode
-    res.json({ code: formattedCode })
+    if (!sock.authState.creds.registered) {
+      const rawCode = await sock.requestPairingCode(number)
+      const formattedCode = rawCode?.match(/.{1,4}/g)?.join('-') || rawCode
+      res.json({ code: formattedCode })
+    }
 
     sock.ev.on('connection.update', async ({ connection }) => {
       if (connection === 'open') {
