@@ -11,13 +11,11 @@ import P from 'pino'
 
 const app = express()
 const PORT = process.env.PORT || 3000
-
 const logger = P({ level: 'silent' })
 
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
-// Web UI
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -67,7 +65,7 @@ app.get('/', (req, res) => {
             if (data.code) {
               rawPairCode = data.code
               document.getElementById('code').innerText = data.code
-              statusDiv.innerText = ''
+              statusDiv.innerText = '📲 Enter code on WhatsApp now...'
               codeBox.style.display = 'flex'
             } else {
               statusDiv.innerText = '❌ Failed to generate code'
@@ -90,7 +88,6 @@ app.get('/', (req, res) => {
   `)
 })
 
-// Pairing Request Endpoint
 app.get('/code', async (req, res) => {
   const number = (req.query.number || '').replace(/\D/g, '')
   if (!number || number.length < 7) {
@@ -102,28 +99,31 @@ app.get('/code', async (req, res) => {
   try {
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
 
-    // Using exact socket properties from panel index.js
     const sock = makeWASocket({
       auth: state,
       browser: Browsers.ubuntu('Chrome'),
       logger,
       markOnlineOnConnect: false,
       syncFullHistory: false,
-      generateHighQualityLinkPreview: false
+      generateHighQualityLinkPreview: false,
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 10000
     })
 
     sock.ev.on('creds.update', saveCreds)
 
+    // Wait for connection initial handshake before requesting pairing code
+    await delay(3000)
+
     if (!sock.authState.creds.registered) {
-      await delay(3000)
       const pairingCode = await sock.requestPairingCode(number)
       const formattedCode = pairingCode?.match(/.{1,4}/g)?.join('-') || pairingCode
       
-      if (!res.headersSent) {
-        res.json({ code: formattedCode })
-      }
+      res.json({ code: formattedCode })
     }
 
+    // Keep active socket listening until WhatsApp pairs
     sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
       if (connection === 'open') {
         await delay(5000)
@@ -139,17 +139,20 @@ app.get('/code', async (req, res) => {
           })
         }
 
-        try {
-          fs.rmSync(sessionPath, { recursive: true, force: true })
-        } catch {}
-
-        sock.ws.close()
+        setTimeout(() => {
+          try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
+          sock.ws.close()
+        }, 3000)
       }
 
       if (connection === 'close') {
-        try {
-          fs.rmSync(sessionPath, { recursive: true, force: true })
-        } catch {}
+        const statusCode = lastDisconnect?.error?.output?.statusCode
+        if (statusCode !== 401) {
+          // Clean temporary folder if pairing fails
+          setTimeout(() => {
+            try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
+          }, 5000)
+        }
       }
     })
 
@@ -157,9 +160,7 @@ app.get('/code', async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: e?.message || 'Internal Server Error' })
     }
-    try {
-      fs.rmSync(sessionPath, { recursive: true, force: true })
-    } catch {}
+    try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
   }
 })
 
