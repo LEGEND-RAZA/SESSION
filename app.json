@@ -1,13 +1,23 @@
 {
   "name": "Raza Bot Session Generator",
   "description": "Web App to generate WhatsApp SESSION_ID for Raza Bot",
-  "repository": "https://github.com/YOUR_USERNAME/raza-bot",
+  "repository": "https://github.com/LEGEND-RAZA/SESSION",
   "logo": "https://i.imgur.com/2w3x8QO.png",
-  "keywords": ["whatsapp", "session-generator", "baileys", "raza-bot"],
-  "formation": {
-    "web": {
-      "quantity": 1,
-      "size": "eco"
+  "keywords": [
+    "whatsapp",
+    "session-generator",
+    "baileys",
+    "raza-bot"
+  ],
+  "env": {
+    "PORT": {
+      "description": "Port for the web server (automatically set by Heroku)",
+      "required": false
     }
-  }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ]
 }
