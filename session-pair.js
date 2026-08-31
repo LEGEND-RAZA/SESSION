@@ -1,4 +1,9 @@
-import makeWASocket, { Browsers, useMultiFileAuthState, delay, fetchLatestBaileysVersion } from '@whiskeysockets/baileys'
+import makeWASocket, {
+  Browsers,
+  useMultiFileAuthState,
+  delay
+} from '@whiskeysockets/baileys'
+
 import express from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -7,6 +12,12 @@ import P from 'pino'
 const app = express()
 const PORT = process.env.PORT || 3000
 
+const logger = P({ level: 'silent' })
+
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
+
+// Web UI
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -79,61 +90,76 @@ app.get('/', (req, res) => {
   `)
 })
 
+// Pairing Request Endpoint
 app.get('/code', async (req, res) => {
   const number = (req.query.number || '').replace(/\D/g, '')
-  if (!number || number.length < 7) return res.status(400).json({ error: 'Invalid number' })
+  if (!number || number.length < 7) {
+    return res.status(400).json({ error: 'Invalid phone number' })
+  }
 
   const sessionPath = path.join(process.cwd(), `temp_${Date.now()}`)
+
   try {
-    const { version } = await fetchLatestBaileysVersion()
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
-    
+
+    // Using exact socket properties from panel index.js
     const sock = makeWASocket({
-      version,
       auth: state,
-      printQRInTerminal: false,
-      logger: P({ level: 'fatal' }),
-      browser: ['Ubuntu', 'Chrome', '20.0.04'],
-      connectTimeoutMs: 60000,
-      defaultQueryTimeoutMs: 0,
-      keepAliveIntervalMs: 10000,
-      emitOwnEvents: true,
-      retryRequestOptions: {
-        delayMs: 250,
-        maxRetries: 5
-      }
+      browser: Browsers.ubuntu('Chrome'),
+      logger,
+      markOnlineOnConnect: false,
+      syncFullHistory: false,
+      generateHighQualityLinkPreview: false
     })
 
     sock.ev.on('creds.update', saveCreds)
 
-    await delay(3000)
-
     if (!sock.authState.creds.registered) {
-      const rawCode = await sock.requestPairingCode(number)
-      const formattedCode = rawCode?.match(/.{1,4}/g)?.join('-') || rawCode
-      res.json({ code: formattedCode })
+      await delay(3000)
+      const pairingCode = await sock.requestPairingCode(number)
+      const formattedCode = pairingCode?.match(/.{1,4}/g)?.join('-') || pairingCode
+      
+      if (!res.headersSent) {
+        res.json({ code: formattedCode })
+      }
     }
 
-    sock.ev.on('connection.update', async ({ connection }) => {
+    sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
       if (connection === 'open') {
         await delay(5000)
         const credsFile = path.join(sessionPath, 'creds.json')
+        
         if (fs.existsSync(credsFile)) {
           const credsData = fs.readFileSync(credsFile, 'utf-8')
           const sessionId = `Raza~${Buffer.from(credsData).toString('base64')}`
           const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net'
 
           await sock.sendMessage(botJid, {
-            text: `✅ *ʀᴀᴢᴀ ʙᴏᴛ sᴇssɪᴏɴ ɢᴇɴᴇʀᴀᴛᴇᴅ*\n\n\`\`\`${sessionId}\`\`\``
+            text: `🤖 *ʀᴀᴢᴀ ʙᴏᴛ sᴇssɪᴏɴ ɢᴇɴᴇʀᴀᴛᴇᴅ*\n\nHere is your SESSION_ID:\n\n\`\`\`${sessionId}\`\`\``
           })
         }
-        try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
+
+        try {
+          fs.rmSync(sessionPath, { recursive: true, force: true })
+        } catch {}
+
         sock.ws.close()
       }
+
+      if (connection === 'close') {
+        try {
+          fs.rmSync(sessionPath, { recursive: true, force: true })
+        } catch {}
+      }
     })
+
   } catch (e) {
-    if (!res.headersSent) res.status(500).json({ error: e.message })
-    try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
+    if (!res.headersSent) {
+      res.status(500).json({ error: e?.message || 'Internal Server Error' })
+    }
+    try {
+      fs.rmSync(sessionPath, { recursive: true, force: true })
+    } catch {}
   }
 })
 
