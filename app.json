@@ -1,26 +1,11 @@
 {
-  "name": "Raza Bot",
-  "description": "WhatsApp Bot built with Baileys",
+  "name": "Raza Bot Session Generator",
+  "description": "Web App to generate WhatsApp SESSION_ID for Raza Bot",
   "repository": "https://github.com/YOUR_USERNAME/raza-bot",
   "logo": "https://i.imgur.com/2w3x8QO.png",
-  "keywords": ["whatsapp", "bot", "baileys", "raza-bot"],
-  "env": {
-    "SESSION_ID": {
-      "description": "Your WhatsApp Session ID string generated via session scanner.",
-      "required": false
-    },
-    "PREFIX": {
-      "description": "Bot command prefix (Default is !)",
-      "value": "!",
-      "required": false
-    },
-    "OWNER_NUMBER": {
-      "description": "Owner phone number with country code (e.g. 923xxxxxxxxx)",
-      "required": true
-    }
-  },
+  "keywords": ["whatsapp", "session-generator", "baileys", "raza-bot"],
   "formation": {
-    "worker": {
+    "web": {
       "quantity": 1,
       "size": "eco"
     }
