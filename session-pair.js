@@ -1,8 +1,25 @@
-const { jidNormalizedUser } = require('@whiskeysockets/baileys')
+import express from 'express'
+import fs from 'fs'
+import path from 'path'
+import makeWASocket, { delay, jidNormalizedUser, useMultiFileAuthState } from '@whiskeysockets/baileys'
+import pino from 'pino'
 
-const sock = makeWASocket({
+const router = express.Router()
+const logger = pino({ level: 'silent' })
+
+router.get('/', async (req, res) => {
+  const number = req.query.number
+  if (!number) {
+    return res.status(400).json({ error: 'Phone number is required' })
+  }
+
+  const sessionPath = path.join(process.cwd(), 'temp', `session_${Date.now()}`)
+
+  try {
+    const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
+
+    const sock = makeWASocket({
       auth: state,
-      browser: Browsers.ubuntu('Chrome'),
       logger,
       markOnlineOnConnect: false,
       syncFullHistory: false,
@@ -14,7 +31,6 @@ const sock = makeWASocket({
 
     sock.ev.on('creds.update', saveCreds)
 
-    // Wait for connection initial handshake before requesting pairing code
     await delay(3000)
 
     if (!sock.authState.creds.registered) {
@@ -24,7 +40,6 @@ const sock = makeWASocket({
       res.json({ code: formattedCode })
     }
 
-    // Keep active socket listening until WhatsApp pairs
     sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
       if (connection === 'open') {
         await delay(5000)
@@ -33,10 +48,8 @@ const sock = makeWASocket({
         if (fs.existsSync(credsFile)) {
           const credsData = fs.readFileSync(credsFile, 'utf-8')
           
-          // Pattern prefix set to Raza
+          // Enforcing 'Raza' pattern prefix
           const sessionId = `Raza~${Buffer.from(credsData).toString('base64')}`
-          
-          // Clean JID formatting
           const rawJid = sock.user?.id || sock.user?.jid
           const botJid = jidNormalizedUser(rawJid)
 
@@ -54,7 +67,6 @@ const sock = makeWASocket({
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode
         if (statusCode !== 401) {
-          // Clean temporary folder if pairing fails
           setTimeout(() => {
             try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
           }, 5000)
@@ -70,4 +82,4 @@ const sock = makeWASocket({
   }
 })
 
-app.listen(PORT, () => console.log(`Pair server running on port ${PORT}`))
+export default router
