@@ -1,3 +1,5 @@
+const { jidNormalizedUser } = require('@whiskeysockets/baileys')
+
 const sock = makeWASocket({
       auth: state,
       browser: Browsers.ubuntu('Chrome'),
@@ -30,11 +32,16 @@ const sock = makeWASocket({
         
         if (fs.existsSync(credsFile)) {
           const credsData = fs.readFileSync(credsFile, 'utf-8')
-          const sessionId = Raza\~${Buffer.from(credsData).toString('base64')}
-          const botJid = sock.user.id.split('@')[0].split(':')[0] + '@s.whatsapp.net'
+          
+          // Pattern prefix set to Raza
+          const sessionId = `Raza~${Buffer.from(credsData).toString('base64')}`
+          
+          // Clean JID formatting
+          const rawJid = sock.user?.id || sock.user?.jid
+          const botJid = jidNormalizedUser(rawJid)
 
           await sock.sendMessage(botJid, {
-            text: 🤖 *ʀᴀᴢᴀ ʙᴏᴛ sᴇssɪᴏɴ ɢᴇɴᴇʀᴀᴛᴇᴅ*\n\nHere is your SESSION_ID:\n\n\\\${sessionId}\\\``
+            text: `🤖 *ʀᴀᴢᴀ ʙᴏᴛ sᴇssɪᴏɴ ɢᴇɴᴇʀᴀᴛᴇᴅ*\n\nHere is your SESSION_ID:\n\n\`\`\`${sessionId}\`\`\``
           })
         }
 
@@ -63,4 +70,4 @@ const sock = makeWASocket({
   }
 })
 
-app.listen(PORT, () => console.log(Pair server running on port ${PORT}))
+app.listen(PORT, () => console.log(`Pair server running on port ${PORT}`))
