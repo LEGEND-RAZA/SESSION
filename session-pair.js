@@ -2,8 +2,7 @@ import makeWASocket, {
   Browsers,
   useMultiFileAuthState,
   jidNormalizedUser,
-  delay,
-  makeCacheableSignalKeyStore
+  delay
 } from '@whiskeysockets/baileys'
 
 import express from 'express'
@@ -13,7 +12,7 @@ import P from 'pino'
 
 const app = express()
 const PORT = process.env.PORT || 3000
-const logger = P({ level: 'fatal' })
+const logger = P({ level: 'silent' })
 
 // Pattern applied: Raza
 const botPattern = 'Raza'
@@ -98,7 +97,7 @@ app.get('/code', async (req, res) => {
   const number = String(req.query.number || '').replace(/\D/g, '')
 
   if (!number || number.length < 7) {
-    return res.status(400).json({ error: 'Invalid phone number' })
+    return res.status(400).json({ error: 'Invalid phone number provided.' })
   }
 
   const sessionPath = path.join(process.cwd(), `temp_${Date.now()}`)
@@ -107,40 +106,38 @@ app.get('/code', async (req, res) => {
   try {
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
 
-    // Critical Fix: Wrapped auth with Signal Key Caching
+    // Using exact socket engine configuration from your working startBot function
     sock = makeWASocket({
-      auth: {
-        creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, logger)
-      },
-      browser: ['Ubuntu', 'Chrome', '20.0.04'],
+      auth: state,
+      browser: Browsers.ubuntu('Chrome'),
       logger,
       markOnlineOnConnect: false,
       syncFullHistory: false,
-      generateHighQualityLinkPreview: false,
-      connectTimeoutMs: 60000,
-      defaultQueryTimeoutMs: 0,
-      keepAliveIntervalMs: 10000,
-      retryRequestOptions: {
-        delayMs: 250,
-        maxRetries: 5
-      }
+      generateHighQualityLinkPreview: false
     })
 
     sock.ev.on('creds.update', saveCreds)
 
+    /*
+     * Connection listener handles the post-pairing sync once code is entered on phone
+     */
     sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
       console.log('[WhatsApp]', connection || 'connecting')
 
       if (connection === 'open') {
-        console.log('[WhatsApp] Successfully connected')
-        await delay(5000)
+        console.log('[WhatsApp] Connection established successfully!')
+        
+        // Allow time for WhatsApp to populate credentials.json fully
+        await delay(3000)
 
         const credsFile = path.join(sessionPath, 'creds.json')
+
         if (fs.existsSync(credsFile)) {
           const credsData = fs.readFileSync(credsFile, 'utf8')
           const sessionId = `${botPattern}~${Buffer.from(credsData).toString('base64')}`
-          const botJid = jidNormalizedUser(sock.user.id)
+          const botJid = jidNormalizedUser(sock.user?.id)
+
+          console.log('[WhatsApp] Bot JID:', botJid)
 
           try {
             await sock.sendMessage(botJid, {
@@ -152,10 +149,12 @@ app.get('/code', async (req, res) => {
           }
         }
 
+        // Leave socket alive for 20s to ensure internal WhatsApp state sync finishes before cleanup
         setTimeout(() => {
+          console.log('[WhatsApp] Cleaning up temporary session...')
           try { sock.ws.close() } catch {}
           try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
-        }, 15000)
+        }, 20000)
       }
 
       if (connection === 'close') {
@@ -168,24 +167,45 @@ app.get('/code', async (req, res) => {
       }
     })
 
-    await delay(3000)
-
+    /* =========================================================
+       YOUR 100% WORKING PAIRING FUNCTION
+    ========================================================= */
     if (!sock.authState.creds.registered) {
-      console.log('[WhatsApp] Requesting pairing code for:', number)
-      const pairingCode = await sock.requestPairingCode(number)
-      const formattedCode = pairingCode?.match(/.{1,4}/g)?.join('-') || pairingCode
+      await new Promise(resolve => setTimeout(resolve, 3000))
 
+      try {
+        const pairingCode = await sock.requestPairingCode(number)
+        const formattedCode = pairingCode?.match(/.{1,4}/g)?.join('-') || pairingCode
+
+        console.log('\n╔═════════════════════════════╗')
+        console.log('║ RAZA PAIRING CODE           ║')
+        console.log(`║ ${formattedCode}             ║`)
+        console.log('╚═════════════════════════════╝\n')
+
+        if (!res.headersSent) {
+          return res.json({ code: formattedCode })
+        }
+      } catch (e) {
+        console.error('❌ Pairing code request failed:', e?.message || e)
+        if (!res.headersSent) {
+          return res.status(500).json({ error: 'Pairing code request failed: ' + (e?.message || e) })
+        }
+      }
+    } else {
       if (!res.headersSent) {
-        return res.json({ code: formattedCode })
+        return res.status(400).json({ error: 'This temporary session is already registered.' })
       }
     }
+
   } catch (e) {
-    console.error('[Pairing Error]', e)
+    console.error('Startup error:', e)
     if (!res.headersSent) {
-      return res.status(500).json({ error: e?.message || 'Internal Server Error' })
+      return res.status(500).json({ error: e?.message || 'Startup Error' })
     }
     try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
   }
 })
 
-app.listen(PORT, () => console.log(`ʀᴀᴢᴀ ᴘᴀɪʀ sᴇʀᴠᴇʀ ʀᴜɴɴɪɴɢ ᴏɴ ᴘᴏʀᴛ ${PORT}`))
+app.listen(PORT, () => {
+  console.log(`ʀᴀᴢᴀ ᴘᴀɪʀ sᴇʀᴠᴇʀ ʀᴜɴɴɪɴɢ ᴏɴ ᴘᴏʀᴛ ${PORT}`)
+})
