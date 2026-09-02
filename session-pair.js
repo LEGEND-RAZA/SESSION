@@ -4,10 +4,17 @@ import path from 'path'
 import makeWASocket, { delay, jidNormalizedUser, useMultiFileAuthState } from '@whiskeysockets/baileys'
 import pino from 'pino'
 
-const router = express.Router()
+const app = express()
+const PORT = process.env.PORT || 8080
 const logger = pino({ level: 'silent' })
 
-router.get('/', async (req, res) => {
+app.use(express.json())
+
+app.get('/', (req, res) => {
+  res.send('🤖 Raza Bot Pair Server is Running!')
+})
+
+app.get('/pair', async (req, res) => {
   const number = req.query.number
   if (!number) {
     return res.status(400).json({ error: 'Phone number is required' })
@@ -48,7 +55,6 @@ router.get('/', async (req, res) => {
         if (fs.existsSync(credsFile)) {
           const credsData = fs.readFileSync(credsFile, 'utf-8')
           
-          // Enforcing 'Raza' pattern prefix
           const sessionId = `Raza~${Buffer.from(credsData).toString('base64')}`
           const rawJid = sock.user?.id || sock.user?.jid
           const botJid = jidNormalizedUser(rawJid)
@@ -82,4 +88,4 @@ router.get('/', async (req, res) => {
   }
 })
 
-export default router
+app.listen(PORT, () => console.log(`Pair server running on port ${PORT}`))
