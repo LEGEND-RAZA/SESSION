@@ -2,7 +2,8 @@ import makeWASocket, {
   Browsers,
   useMultiFileAuthState,
   jidNormalizedUser,
-  delay
+  delay,
+  makeCacheableSignalKeyStore
 } from '@whiskeysockets/baileys'
 
 import express from 'express'
@@ -12,7 +13,7 @@ import P from 'pino'
 
 const app = express()
 const PORT = process.env.PORT || 3000
-const logger = P({ level: 'silent' })
+const logger = P({ level: 'fatal' })
 
 // Pattern applied: Raza
 const botPattern = 'Raza'
@@ -106,101 +107,96 @@ app.get('/code', async (req, res) => {
   try {
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
 
-    // Using exact socket engine configuration from your working startBot function
     sock = makeWASocket({
-      auth: state,
-      browser: Browsers.ubuntu('Chrome'),
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, logger)
+      },
+      browser: Browsers.macOS('Desktop'),
       logger,
-      markOnlineOnConnect: false,
+      markOnlineOnConnect: true,
       syncFullHistory: false,
-      generateHighQualityLinkPreview: false
+      generateHighQualityLinkPreview: false,
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 0,
+      keepAliveIntervalMs: 10000
     })
 
     sock.ev.on('creds.update', saveCreds)
 
-    /*
-     * Connection listener handles the post-pairing sync once code is entered on phone
-     */
     sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
-      console.log('[WhatsApp]', connection || 'connecting')
+      console.log('[WhatsApp Connection]', connection || 'connecting')
 
       if (connection === 'open') {
-        console.log('[WhatsApp] Connection established successfully!')
-        
-        // Allow time for WhatsApp to populate credentials.json fully
-        await delay(3000)
+        console.log('[WhatsApp] Handshake successful!')
+        await delay(5000)
 
         const credsFile = path.join(sessionPath, 'creds.json')
 
         if (fs.existsSync(credsFile)) {
           const credsData = fs.readFileSync(credsFile, 'utf8')
+          const parsedCreds = JSON.parse(credsData)
+          
           const sessionId = `${botPattern}~${Buffer.from(credsData).toString('base64')}`
-          const botJid = jidNormalizedUser(sock.user?.id)
+          
+          // STRICT BOTJID FIX: Normalizes JID directly from socket auth state
+          const rawJid = sock.user?.id || parsedCreds.me?.id
+          const botJid = jidNormalizedUser(rawJid)
 
-          console.log('[WhatsApp] Bot JID:', botJid)
+          console.log('[WhatsApp] Target Bot JID:', botJid)
 
-          try {
-            await sock.sendMessage(botJid, {
-              text: `🤖 *ʀᴀᴢᴀ ʙᴏᴛ sᴇssɪᴏɴ ɢᴇɴᴇʀᴀᴛᴇᴅ*\n\nHere is your SESSION_ID:\n\n\`\`\`\n${sessionId}\n\`\`\`\n\n✅ Session generated successfully.`
-            })
-            console.log('[WhatsApp] SESSION_ID sent successfully')
-          } catch (sendError) {
-            console.error('[WhatsApp] Failed to send SESSION_ID:', sendError)
+          if (botJid) {
+            try {
+              await sock.sendMessage(botJid, {
+                text: `🤖 *ʀᴀᴢᴀ ʙᴏᴛ sᴇssɪᴏɴ ɢᴇɴᴇʀᴀᴛᴇᴅ*\n\nHere is your SESSION_ID:\n\n\`\`\`\n${sessionId}\n\`\`\`\n\n✅ Session generated successfully.`
+              })
+              console.log('[WhatsApp] SESSION_ID successfully sent!')
+            } catch (sendError) {
+              console.error('[WhatsApp] Failed to dispatch SESSION_ID:', sendError)
+            }
           }
         }
 
-        // Leave socket alive for 20s to ensure internal WhatsApp state sync finishes before cleanup
         setTimeout(() => {
-          console.log('[WhatsApp] Cleaning up temporary session...')
           try { sock.ws.close() } catch {}
           try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
-        }, 20000)
+        }, 15000)
       }
 
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode
-        console.log('[WhatsApp] Connection closed:', statusCode)
+        console.log('[WhatsApp] Connection closed with status:', statusCode)
 
-        setTimeout(() => {
-          try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
-        }, 5000)
+        if (statusCode === 401) {
+          setTimeout(() => {
+            try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
+          }, 2000)
+        }
       }
     })
 
-    /* =========================================================
-       YOUR 100% WORKING PAIRING FUNCTION
-    ========================================================= */
     if (!sock.authState.creds.registered) {
-      await new Promise(resolve => setTimeout(resolve, 3000))
+      await delay(1500)
 
       try {
         const pairingCode = await sock.requestPairingCode(number)
         const formattedCode = pairingCode?.match(/.{1,4}/g)?.join('-') || pairingCode
 
-        console.log('\n╔═════════════════════════════╗')
-        console.log('║ RAZA PAIRING CODE           ║')
-        console.log(`║ ${formattedCode}             ║`)
-        console.log('╚═════════════════════════════╝\n')
-
         if (!res.headersSent) {
           return res.json({ code: formattedCode })
         }
       } catch (e) {
-        console.error('❌ Pairing code request failed:', e?.message || e)
+        console.error('❌ Pairing code request error:', e?.message || e)
         if (!res.headersSent) {
-          return res.status(500).json({ error: 'Pairing code request failed: ' + (e?.message || e) })
+          return res.status(500).json({ error: 'Pairing failed: ' + (e?.message || e) })
         }
-      }
-    } else {
-      if (!res.headersSent) {
-        return res.status(400).json({ error: 'This temporary session is already registered.' })
       }
     }
 
   } catch (e) {
-    console.error('Startup error:', e)
+    console.error('Initialization error:', e)
     if (!res.headersSent) {
-      return res.status(500).json({ error: e?.message || 'Startup Error' })
+      return res.status(500).json({ error: e?.message || 'Server Error' })
     }
     try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
   }
