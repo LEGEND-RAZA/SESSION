@@ -4,17 +4,10 @@ import path from 'path'
 import makeWASocket, { delay, jidNormalizedUser, useMultiFileAuthState } from '@whiskeysockets/baileys'
 import pino from 'pino'
 
-const app = express()
-const PORT = process.env.PORT || 8080
+const router = express.Router()
 const logger = pino({ level: 'silent' })
 
-app.use(express.json())
-
-app.get('/', (req, res) => {
-  res.send('🤖 Raza Bot Pair Server is Running!')
-})
-
-app.get('/pair', async (req, res) => {
+router.get('/', async (req, res) => {
   const number = req.query.number
   if (!number) {
     return res.status(400).json({ error: 'Phone number is required' })
@@ -88,4 +81,4 @@ app.get('/pair', async (req, res) => {
   }
 })
 
-app.listen(PORT, () => console.log(`Pair server running on port ${PORT}`))
+export default router
