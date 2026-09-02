@@ -6,15 +6,13 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "pair": "node session-pair.js",
-    "qr": "node session-qr.js"
+    "pair": "node session-pair.js"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^6.7.12",
     "express": "^4.19.2",
-    "pino": "^9.0.0",
-    "qrcode": "^1.5.3"
+    "pino": "^9.0.0"
   },
   "engines": {
     "node": ">=18.0.0"
