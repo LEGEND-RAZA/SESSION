@@ -2,8 +2,7 @@ import makeWASocket, {
   Browsers,
   useMultiFileAuthState,
   jidNormalizedUser,
-  delay,
-  makeCacheableSignalKeyStore
+  delay
 } from '@whiskeysockets/baileys'
 
 import express from 'express'
@@ -13,7 +12,7 @@ import P from 'pino'
 
 const app = express()
 const PORT = process.env.PORT || 3000
-const logger = P({ level: 'fatal' })
+const logger = P({ level: 'silent' })
 
 // Pattern applied: Raza
 const botPattern = 'Raza'
@@ -102,57 +101,48 @@ app.get('/code', async (req, res) => {
   }
 
   const sessionPath = path.join(process.cwd(), `temp_${Date.now()}`)
-  let sock
 
   try {
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
 
-    sock = makeWASocket({
-      auth: {
-        creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, logger)
-      },
-      browser: Browsers.macOS('Desktop'),
+    const sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: false,
       logger,
-      markOnlineOnConnect: true,
+      browser: Browsers.ubuntu('Chrome'),
       syncFullHistory: false,
-      generateHighQualityLinkPreview: false,
-      connectTimeoutMs: 60000,
-      defaultQueryTimeoutMs: 0,
-      keepAliveIntervalMs: 10000
+      generateHighQualityLinkPreview: false
     })
 
     sock.ev.on('creds.update', saveCreds)
 
     sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
-      console.log('[WhatsApp Connection]', connection || 'connecting')
+      console.log('[WhatsApp State]', connection || 'connecting')
 
       if (connection === 'open') {
-        console.log('[WhatsApp] Handshake successful!')
+        console.log('[WhatsApp] Pair verified & connected!')
         await delay(5000)
 
         const credsFile = path.join(sessionPath, 'creds.json')
 
         if (fs.existsSync(credsFile)) {
           const credsData = fs.readFileSync(credsFile, 'utf8')
-          const parsedCreds = JSON.parse(credsData)
-          
           const sessionId = `${botPattern}~${Buffer.from(credsData).toString('base64')}`
           
-          // STRICT BOTJID FIX: Normalizes JID directly from socket auth state
-          const rawJid = sock.user?.id || parsedCreds.me?.id
-          const botJid = jidNormalizedUser(rawJid)
+          // Fixed Bot JID formatting
+          const rawUser = sock.user?.id || ''
+          const botJid = jidNormalizedUser(rawUser)
 
-          console.log('[WhatsApp] Target Bot JID:', botJid)
+          console.log('[WhatsApp] Target JID:', botJid)
 
           if (botJid) {
             try {
               await sock.sendMessage(botJid, {
                 text: `🤖 *ʀᴀᴢᴀ ʙᴏᴛ sᴇssɪᴏɴ ɢᴇɴᴇʀᴀᴛᴇᴅ*\n\nHere is your SESSION_ID:\n\n\`\`\`\n${sessionId}\n\`\`\`\n\n✅ Session generated successfully.`
               })
-              console.log('[WhatsApp] SESSION_ID successfully sent!')
-            } catch (sendError) {
-              console.error('[WhatsApp] Failed to dispatch SESSION_ID:', sendError)
+              console.log('[WhatsApp] SESSION_ID dispatched!')
+            } catch (err) {
+              console.error('[WhatsApp] Send error:', err)
             }
           }
         }
@@ -165,7 +155,7 @@ app.get('/code', async (req, res) => {
 
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode
-        console.log('[WhatsApp] Connection closed with status:', statusCode)
+        console.log('[WhatsApp] Closed with status:', statusCode)
 
         if (statusCode === 401) {
           setTimeout(() => {
@@ -175,26 +165,21 @@ app.get('/code', async (req, res) => {
       }
     })
 
+    // Execute pairing immediately without artificial delays
     if (!sock.authState.creds.registered) {
-      await delay(1500)
+      // 2-second buffer to allow socket initialization
+      await delay(2000)
 
-      try {
-        const pairingCode = await sock.requestPairingCode(number)
-        const formattedCode = pairingCode?.match(/.{1,4}/g)?.join('-') || pairingCode
+      const pairingCode = await sock.requestPairingCode(number)
+      const formattedCode = pairingCode?.match(/.{1,4}/g)?.join('-') || pairingCode
 
-        if (!res.headersSent) {
-          return res.json({ code: formattedCode })
-        }
-      } catch (e) {
-        console.error('❌ Pairing code request error:', e?.message || e)
-        if (!res.headersSent) {
-          return res.status(500).json({ error: 'Pairing failed: ' + (e?.message || e) })
-        }
+      if (!res.headersSent) {
+        return res.json({ code: formattedCode })
       }
     }
 
   } catch (e) {
-    console.error('Initialization error:', e)
+    console.error('Pairing process error:', e)
     if (!res.headersSent) {
       return res.status(500).json({ error: e?.message || 'Server Error' })
     }
