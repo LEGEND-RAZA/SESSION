@@ -1,23 +1,17 @@
 {
-  "name": "Raza Bot Session Generator",
-  "description": "Web App to generate WhatsApp SESSION_ID for Raza Bot",
+  "name": "Raza Bot Pair Server",
+  "description": "WhatsApp Bot Session ID & Pairing Code Generator",
   "repository": "https://github.com/LEGEND-RAZA/SESSION",
-  "logo": "https://i.imgur.com/2w3x8QO.png",
-  "keywords": [
-    "whatsapp",
-    "session-generator",
-    "baileys",
-    "raza-bot"
-  ],
-  "env": {
-    "PORT": {
-      "description": "Port for the web server (automatically set by Heroku)",
-      "required": false
-    }
-  },
+  "keywords": ["whatsapp", "baileys", "pair-code", "raza-bot"],
   "buildpacks": [
     {
       "url": "heroku/nodejs"
     }
-  ]
+  ],
+  "env": {
+    "NODE_ENV": {
+      "description": "Node environment",
+      "value": "production"
+    }
+  }
 }
