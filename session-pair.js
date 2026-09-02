@@ -2,7 +2,8 @@ import makeWASocket, {
   Browsers,
   useMultiFileAuthState,
   jidNormalizedUser,
-  delay
+  delay,
+  DisconnectReason
 } from '@whiskeysockets/baileys'
 
 import express from 'express'
@@ -101,6 +102,7 @@ app.get('/code', async (req, res) => {
   }
 
   const sessionPath = path.join(process.cwd(), `temp_${Date.now()}`)
+  let codeSent = false
 
   try {
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
@@ -129,7 +131,6 @@ app.get('/code', async (req, res) => {
           const credsData = fs.readFileSync(credsFile, 'utf8')
           const sessionId = `${botPattern}~${Buffer.from(credsData).toString('base64')}`
           
-          // Fixed Bot JID formatting
           const rawUser = sock.user?.id || ''
           const botJid = jidNormalizedUser(rawUser)
 
@@ -157,24 +158,33 @@ app.get('/code', async (req, res) => {
         const statusCode = lastDisconnect?.error?.output?.statusCode
         console.log('[WhatsApp] Closed with status:', statusCode)
 
-        if (statusCode === 401) {
-          setTimeout(() => {
-            try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
-          }, 2000)
+        if (statusCode === DisconnectReason.loggedOut) {
+          try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
         }
       }
     })
 
-    // Execute pairing immediately without artificial delays
+    // Reliable pairing handler aligned with your working script pattern
     if (!sock.authState.creds.registered) {
-      // 2-second buffer to allow socket initialization
-      await delay(2000)
+      await delay(3000) // Stable buffer allowing the socket connection to stabilize
 
-      const pairingCode = await sock.requestPairingCode(number)
-      const formattedCode = pairingCode?.match(/.{1,4}/g)?.join('-') || pairingCode
+      try {
+        const pairingCode = await sock.requestPairingCode(number)
+        const formattedCode = pairingCode?.match(/.{1,4}/g)?.join('-') || pairingCode
 
+        if (!res.headersSent) {
+          codeSent = true
+          return res.json({ code: formattedCode })
+        }
+      } catch (e) {
+        console.error('[-] Pairing code request failed:', e?.message || e)
+        if (!res.headersSent) {
+          return res.status(500).json({ error: e?.message || 'Pairing code request failed' })
+        }
+      }
+    } else {
       if (!res.headersSent) {
-        return res.json({ code: formattedCode })
+        return res.status(400).json({ error: 'Device already registered.' })
       }
     }
 
