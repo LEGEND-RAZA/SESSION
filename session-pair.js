@@ -1,167 +1,73 @@
-import makeWASocket, {
-  Browsers,
-  useMultiFileAuthState,
-  delay
-} from '@whiskeysockets/baileys'
+const sock = makeWASocket({
+  auth: state,
+  browser: Browsers.ubuntu('Chrome'),
+  logger,
+  markOnlineOnConnect: false,
+  syncFullHistory: false,
+  generateHighQualityLinkPreview: false,
+  connectTimeoutMs: 60000,
+  defaultQueryTimeoutMs: 60000,
+  keepAliveIntervalMs: 10000
+})
 
-import express from 'express'
-import fs from 'node:fs'
-import path from 'node:path'
-import P from 'pino'
+sock.ev.on('creds.update', saveCreds)
 
-const app = express()
-const PORT = process.env.PORT || 3000
-const logger = P({ level: 'silent' })
+// Handle connection updates
+sock.ev.on('connection.update', async (update) => {
+  const { connection, lastDisconnect } = update
 
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
+  if (connection === 'open') {
+    await delay(5000)
 
-app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>ʀᴀᴢᴀ ʙᴏᴛ - ᴘᴀɪʀɪɴɢ ᴄᴏᴅᴇ</title>
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <style>
-        body { font-family: monospace; background: #0d1117; color: #c9d1d9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: #161b22; padding: 25px; border-radius: 10px; border: 1px solid #30363d; text-align: center; max-width: 350px; width: 100%; }
-        input { width: 90%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #30363d; background: #0d1117; color: #fff; font-size: 16px; text-align: center; }
-        button { background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 95%; font-size: 16px; margin-top: 5px; }
-        #code-box { margin-top: 15px; display: none; flex-direction: column; align-items: center; }
-        #code { font-size: 22px; color: #58a6ff; letter-spacing: 2px; font-weight: bold; background: #0d1117; padding: 10px; border-radius: 5px; border: 1px dashed #30363d; width: 90%; word-break: break-all; }
-        .copy-btn { background: #1f6feb; margin-top: 10px; }
-      </style>
-    </head>
-    <body>
-      <div class="card">
-        <h2>🤖 ʀᴀᴢᴀ ʙᴏᴛ ᴘᴀɪʀɪɴɢ</h2>
-        <p>Enter phone number with country code</p>
-        <form id="pairForm">
-          <input type="text" id="number" placeholder="923xxxxxxxxx" required />
-          <button type="submit">Get Pairing Code</button>
-        </form>
-        <div id="status" style="margin-top: 15px; font-weight: bold;"></div>
-        <div id="code-box">
-          <div id="code"></div>
-          <button class="copy-btn" id="copyBtn" onclick="copyCode()">📋 Copy Code</button>
-        </div>
-      </div>
-      <script>
-        let rawPairCode = ''
+    try {
+      const credsFile = path.join(sessionPath, 'creds.json')
 
-        document.getElementById('pairForm').addEventListener('submit', async (e) => {
-          e.preventDefault()
-          const number = document.getElementById('number').value.replace(/\\D/g, '')
-          const statusDiv = document.getElementById('status')
-          const codeBox = document.getElementById('code-box')
-          
-          statusDiv.innerText = '⌛ Generating...'
-          codeBox.style.display = 'none'
+      if (fs.existsSync(credsFile) && sock.user?.id) {
+        const credsData = fs.readFileSync(credsFile, 'utf-8')
+        const sessionId = `Raza\~${Buffer.from(credsData).toString('base64')}`
+        const botJid = sock.user.id.split('@')[0].split(':')[0] + '@s.whatsapp.net'
 
-          try {
-            const res = await fetch('/code?number=' + number)
-            const data = await res.json()
-            if (data.code) {
-              rawPairCode = data.code
-              document.getElementById('code').innerText = data.code
-              statusDiv.innerText = '📲 Enter code on WhatsApp now...'
-              codeBox.style.display = 'flex'
-            } else {
-              statusDiv.innerText = '❌ Failed to generate code'
-            }
-          } catch {
-            statusDiv.innerText = '❌ Request Error'
-          }
+        await sock.sendMessage(botJid, {
+          text: `🤖 *ʀᴀᴢᴀ ʙᴏᴛ sᴇssɪᴏɴ ɢᴇɴᴇʀᴀᴛᴇᴅ*\n\nHere is your SESSION_ID:\n\n\`\`\`${sessionId}\`\`\``
         })
+      }
+    } catch (err) {
+      console.error('Error sending session:', err)
+    }
 
-        function copyCode() {
-          if (!rawPairCode) return
-          navigator.clipboard.writeText(rawPairCode)
-          const btn = document.getElementById('copyBtn')
-          btn.innerText = '✅ Copied!'
-          setTimeout(() => btn.innerText = '📋 Copy Code', 2000)
-        }
-      </script>
-    </body>
-    </html>
-  `)
-})
-
-app.get('/code', async (req, res) => {
-  const number = (req.query.number || '').replace(/\D/g, '')
-  if (!number || number.length < 7) {
-    return res.status(400).json({ error: 'Invalid phone number' })
+    // Close after sending
+    setTimeout(() => {
+      try {
+        fs.rmSync(sessionPath, { recursive: true, force: true })
+      } catch {}
+      sock.end()
+    }, 3000)
   }
 
-  const sessionPath = path.join(process.cwd(), `temp_${Date.now()}`)
+  if (connection === 'close') {
+    const statusCode = lastDisconnect?.error?.output?.statusCode
+    if (statusCode !== 401) {
+      setTimeout(() => {
+        try {
+          fs.rmSync(sessionPath, { recursive: true, force: true })
+        } catch {}
+      }, 5000)
+    }
+  }
+})
 
+// Request pairing code only if not registered
+await delay(2000)
+
+if (!sock.authState.creds.registered) {
   try {
-    const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
-
-    const sock = makeWASocket({
-      auth: state,
-      browser: Browsers.ubuntu('Chrome'),
-      logger,
-      markOnlineOnConnect: false,
-      syncFullHistory: false,
-      generateHighQualityLinkPreview: false,
-      connectTimeoutMs: 60000,
-      defaultQueryTimeoutMs: 60000,
-      keepAliveIntervalMs: 10000
-    })
-
-    sock.ev.on('creds.update', saveCreds)
-
-    // Wait for connection initial handshake before requesting pairing code
-    await delay(3000)
-
-    if (!sock.authState.creds.registered) {
-      const pairingCode = await sock.requestPairingCode(number)
-      const formattedCode = pairingCode?.match(/.{1,4}/g)?.join('-') || pairingCode
-      
-      res.json({ code: formattedCode })
-    }
-
-    // Keep active socket listening until WhatsApp pairs
-    sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
-      if (connection === 'open') {
-        await delay(5000)
-        const credsFile = path.join(sessionPath, 'creds.json')
-        
-        if (fs.existsSync(credsFile)) {
-          const credsData = fs.readFileSync(credsFile, 'utf-8')
-          const sessionId = `Raza~${Buffer.from(credsData).toString('base64')}`
-          const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net'
-
-          await sock.sendMessage(botJid, {
-            text: `🤖 *ʀᴀᴢᴀ ʙᴏᴛ sᴇssɪᴏɴ ɢᴇɴᴇʀᴀᴛᴇᴅ*\n\nHere is your SESSION_ID:\n\n\`\`\`${sessionId}\`\`\``
-          })
-        }
-
-        setTimeout(() => {
-          try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
-          sock.ws.close()
-        }, 3000)
-      }
-
-      if (connection === 'close') {
-        const statusCode = lastDisconnect?.error?.output?.statusCode
-        if (statusCode !== 401) {
-          // Clean temporary folder if pairing fails
-          setTimeout(() => {
-            try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
-          }, 5000)
-        }
-      }
-    })
-
-  } catch (e) {
-    if (!res.headersSent) {
-      res.status(500).json({ error: e?.message || 'Internal Server Error' })
-    }
-    try { fs.rmSync(sessionPath, { recursive: true, force: true }) } catch {}
+    const pairingCode = await sock.requestPairingCode(number)
+    const formattedCode = pairingCode?.match(/.{1,4}/g)?.join('-') || pairingCode
+    return res.json({ code: formattedCode })
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || 'Failed to generate pairing code' })
   }
-})
-
-app.listen(PORT, () => console.log(`Pair server running on port ${PORT}`))
+} else {
+  // Already registered
+  return res.json({ message: 'Already registered / Session already exists' })
+}
