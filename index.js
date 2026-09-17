@@ -1,13 +1,25 @@
 import express from 'express';
+import path from 'path';
 import fs from 'fs-extra';
 import pino from 'pino';
+import cors from 'cors';
+import { fileURLToPath } from 'url';
 import { makeWASocket, useMultiFileAuthState, delay, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 8000;
 
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 app.get('/pair', async (req, res) => {
     let num = req.query.code;
@@ -16,9 +28,8 @@ app.get('/pair', async (req, res) => {
         return res.status(400).json({ error: 'Phone number is required' });
     }
 
-    // Clean phone number format
     num = num.replace(/[^0-9]/g, '');
-    const sessionDir = `./temp_session_${Date.now()}`;
+    const sessionDir = `./temp_session_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
     try {
         const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
@@ -35,7 +46,6 @@ app.get('/pair', async (req, res) => {
             await delay(1500);
             const pairingCode = await sock.requestPairingCode(num);
             
-            // Return pairing code to frontend UI
             if (!res.headersSent) {
                 res.json({ code: pairingCode });
             }
@@ -49,24 +59,22 @@ app.get('/pair', async (req, res) => {
             if (connection === 'open') {
                 await delay(5000);
 
-                // Read creds.json and encode into Base64 Session ID
                 const credsPath = `${sessionDir}/creds.json`;
                 if (fs.existsSync(credsPath)) {
                     const credsData = fs.readFileSync(credsPath);
                     const base64Session = Buffer.from(credsData).toString('base64');
                     const sessionId = `RAZA~${base64Session}`;
 
-                    // Send session ID directly to user's WhatsApp chat
                     const userJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                     
                     await sock.sendMessage(userJid, {
-                        text: `╭━━━〔 *RAZA BOT SESSION* 〕━━━┈⊷
+                        text: `╭━━━〔 *LEGEND-RAZA SESSION* 〕━━━┈⊷
 ┃
 ┃  *YOUR SESSION ID:*
 ┃  \`\`\`${sessionId}\`\`\`
 ┃
-┃  ⚠️ *Do not share this key with anyone!*
-╰━━━━━━━━━━━━━━━━━━━━━━┈⊷`
+┃  ⚠️ *Keep this ID private. Do not share it!*
+╰━━━━━━━━━━━━━━━━━━━━━━━━┈⊷`
                     });
 
                     await sock.sendMessage(userJid, { text: sessionId });
@@ -95,5 +103,5 @@ app.get('/pair', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Session Generator running on port ${PORT}`);
+    console.log(`LEGEND-RAZA Session Web Server running on port ${PORT}`);
 });
