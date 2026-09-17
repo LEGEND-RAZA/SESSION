@@ -1,2 +1,1 @@
-web: node session-pair.js
-
+worker: node index.js
