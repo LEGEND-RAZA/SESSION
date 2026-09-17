@@ -1,22 +1,16 @@
 {
-  "name": "raza-session",
+  "name": "raza-session-generator",
   "version": "1.0.0",
-  "description": "WhatsApp Web Session Generator for Raza Bot",
-  "main": "session-pair.js",
+  "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node session-pair.js",
-    "pair": "node session-pair.js",
-    "qr": "node session-qr.js"
+    "start": "node index.js"
   },
   "dependencies": {
-    "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^6.7.12",
+    "cors": "^2.8.5",
     "express": "^4.19.2",
-    "pino": "^9.0.0",
-    "qrcode": "^1.5.3"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "fs-extra": "^11.2.0",
+    "pino": "^9.0.0"
   }
 }
