@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LEGEND-RAZA | Pair Session</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #0b0e14;
+            color: #e0e6ed;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card {
+            background-color: #151c24;
+            border: 1px solid #24303f;
+            border-radius: 16px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            max-width: 420px;
+            width: 100%;
+        }
+        .btn-custom {
+            background: linear-gradient(135deg, #25d366, #128c7e);
+            border: none;
+            color: #fff;
+            font-weight: 600;
+            border-radius: 10px;
+            padding: 12px;
+        }
+        .btn-custom:hover {
+            opacity: 0.9;
+            color: #fff;
+        }
+        .code-box {
+            background-color: #0d1117;
+            border: 1px dashed #25d366;
+            color: #25d366;
+            font-size: 1.8rem;
+            font-weight: bold;
+            letter-spacing: 4px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        .form-control {
+            background-color: #0d1117;
+            border: 1px solid #24303f;
+            color: #fff;
+            border-radius: 10px;
+            padding: 12px;
+        }
+        .form-control:focus {
+            background-color: #0d1117;
+            color: #fff;
+            border-color: #25d366;
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container p-3">
+    <div class="card mx-auto p-4 text-center">
+        <h3 class="fw-bold mb-1 style="color: #25d366;">LEGEND-RAZA</h3>
+        <p class="text-secondary small mb-4">WhatsApp Pairing Session Generator</p>
+
+        <div class="mb-3 text-start">
+            <label for="phoneNumber" class="form-label text-secondary small">Enter WhatsApp Number with Country Code:</label>
+            <input type="text" class="form-control" id="phoneNumber" placeholder="e.g. 923001234567">
+        </div>
+
+        <button class="btn btn-custom w-100 mb-3" id="submitBtn" onclick="getPairCode()">Submit</button>
+
+        <div id="loading" class="spinner-border text-success mx-auto d-none my-3" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+
+        <div id="resultBox" class="d-none">
+            <p class="text-secondary small mb-1">Your Pairing Code (Click to Copy):</p>
+            <div class="code-box p-3 my-2" id="pairCode" onclick="copyCode()">- - - - - -</div>
+            <p class="text-muted extra-small">Enter this code in WhatsApp linked devices to complete login.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function getPairCode() {
+        const phoneInput = document.getElementById('phoneNumber').value.trim();
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+        const resultBox = document.getElementById('resultBox');
+        const pairCode = document.getElementById('pairCode');
+
+        if (!phoneInput) {
+            alert('Please enter your phone number with country code!');
+            return;
+        }
+
+        submitBtn.disabled = true;
+        loading.classList.remove('d-none');
+        resultBox.classList.add('d-none');
+
+        try {
+            const response = await fetch(`/pair?code=${encodeURIComponent(phoneInput)}`);
+            const data = await response.json();
+
+            if (data.code) {
+                pairCode.innerText = data.code;
+                resultBox.classList.remove('d-none');
+            } else {
+                alert(data.error || 'Failed to generate code.');
+            }
+        } catch (err) {
+            alert('Error connecting to server.');
+        } finally {
+            submitBtn.disabled = false;
+            loading.classList.add('d-none');
+        }
+    }
+
+    function copyCode() {
+        const codeText = document.getElementById('pairCode').innerText;
+        navigator.clipboard.writeText(codeText);
+        alert('Pairing code copied to clipboard!');
+    }
+</script>
+
+</body>
+</html>
